@@ -182,9 +182,9 @@ verify_health() {
   ```
   
 - **Traffic Switching**: Implemented via Nginx proxy
-  - Live Demo: http://44.203.38.191
-  - Blue Environment: http://44.203.38.191:8081
-  - Green Environment: http://44.203.38.191:8082
+  - Live Demo: http://bgd.nikhilmishra.live
+  - Blue Environment: http://bgd.nikhilmishra.live:8081
+  - Green Environment: http://bgd.nikhilmishra.live:8082
 
 - **Health Checks**: Implemented at multiple levels
   ```json
@@ -355,7 +355,7 @@ docker exec proxy nginx -s reload
 #### 1. Environment Setup
 **Blue Environment Running:**
 ```bash
-$ curl http://44.203.38.191:8081
+$ curl http://bgd.nikhilmishra.live:8081
 # Output shows blue environment page with version 1.0.0
 <!DOCTYPE html>
 <html>
@@ -375,7 +375,7 @@ $ curl http://44.203.38.191:8081
 
 **Green Environment Running:**
 ```bash
-$ curl http://44.203.38.191:8082
+$ curl http://bgd.nikhilmishra.live:8082
 # Output shows green environment page with version 1.0.1
 <!DOCTYPE html>
 <html>
@@ -396,10 +396,10 @@ $ curl http://44.203.38.191:8082
 #### 2. Health Check System
 **Health Check Responses:**
 ```bash
-$ curl http://44.203.38.191:8081/health
+$ curl http://bgd.nikhilmishra.live:8081/health
 {"status":"healthy"}
 
-$ curl http://44.203.38.191:8082/health
+$ curl http://bgd.nikhilmishra.live:8082/health
 {"status":"healthy"}
 ```
 
@@ -430,16 +430,16 @@ $ ./deploy.sh
 ```bash
 $ docker ps
 CONTAINER ID   IMAGE          PORTS                    NAMES
-abc123...      nginx:alpine   0.0.0.0:8081->80/tcp    blue-web
-def456...      nginx:alpine   0.0.0.0:8082->80/tcp    green-web
-ghi789...      nginx:alpine   0.0.0.0:80->80/tcp      proxy
+********       nginx:alpine   0.0.0.0:8081->80/tcp    blue-web
+********       nginx:alpine   0.0.0.0:8082->80/tcp    green-web
+********       nginx:alpine   0.0.0.0:80->80/tcp      proxy
 ```
 
 #### 6. Zero-Downtime Verification
 **Traffic Switch Test:**
 ```bash
 # Continuous curl during deployment shows no errors
-$ for i in {1..100}; do curl -s http://44.203.38.191/ > /dev/null && echo "Request $i: Success" || echo "Request $i: Failed"; done
+$ for i in {1..100}; do curl -s http://bgd.nikhilmishra.live/ > /dev/null && echo "Request $i: Success" || echo "Request $i: Failed"; done
 Request 1: Success
 Request 2: Success
 ...
@@ -463,4 +463,5 @@ This implementation provides a robust, production-ready blue-green deployment so
 - Comprehensive logging
 - Clear deployment process
 
-Live demo available at: http://44.203.38.191
+Live demo available at: http://bgd.nikhilmishra.live
+Note: This demo is hosted on AWS EC2 and may not be always available as the instance may be stopped to save costs.

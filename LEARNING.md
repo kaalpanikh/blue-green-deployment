@@ -20,13 +20,15 @@ This document follows our journey in building a blue-green deployment system fro
 - Green environment: New version to be deployed
 This setup allows zero-downtime deployments by switching traffic between environments.
 
-**Proof**: Our implementation at http://44.203.38.191
+**Proof**: Our implementation at http://bgd.nikhilmishra.live
 ```bash
 # Blue environment running version 1.0.0
-$ curl http://44.203.38.191:8081
+$ curl http://bgd.nikhilmishra.live:8081
 # Green environment running version 1.0.1
-$ curl http://44.203.38.191:8082
+$ curl http://bgd.nikhilmishra.live:8082
 ```
+
+Note: The demo is hosted on AWS EC2 and may not be always available as the instance may be stopped to save costs.
 
 ### Q: Why do we need blue-green deployments?
 **A**: We need blue-green deployments to:
@@ -39,7 +41,7 @@ $ curl http://44.203.38.191:8082
 ```bash
 # Continuous requests during deployment show no failures
 $ for i in {1..100}; do 
-    curl -s http://44.203.38.191/ > /dev/null && 
+    curl -s http://bgd.nikhilmishra.live/ > /dev/null && 
     echo "Request $i: Success" || 
     echo "Request $i: Failed"
 done
@@ -68,9 +70,9 @@ services:
 ```bash
 $ docker ps
 CONTAINER ID   IMAGE          PORTS                    NAMES
-abc123...      nginx:alpine   0.0.0.0:8081->80/tcp    blue-web
-def456...      nginx:alpine   0.0.0.0:8082->80/tcp    green-web
-ghi789...      nginx:alpine   0.0.0.0:80->80/tcp      proxy
+********       nginx:alpine   0.0.0.0:8081->80/tcp    blue-web
+********       nginx:alpine   0.0.0.0:8082->80/tcp    green-web
+********       nginx:alpine   0.0.0.0:80->80/tcp      proxy
 ```
 
 ### Q: How do we manage multiple environments?
@@ -125,7 +127,7 @@ $ docker inspect --format='{{.State.Health.Status}}' blue-web
 healthy
 
 # Application health
-$ curl http://44.203.38.191:8081/health
+$ curl http://bgd.nikhilmishra.live:8081/health
 {"status":"healthy"}
 
 # Load balancer health
@@ -156,7 +158,7 @@ http {
 }
 
 # Traffic routing verification
-$ curl -I http://44.203.38.191
+$ curl -I http://bgd.nikhilmishra.live
 HTTP/1.1 200 OK
 Server: nginx/1.24.0
 ```
@@ -175,7 +177,7 @@ $ ./deploy.sh
 [2025-02-18 10:30:22] Rollback successful
 
 # Verify still serving from blue
-$ curl http://44.203.38.191
+$ curl http://bgd.nikhilmishra.live
 # Shows blue environment content
 ```
 
@@ -205,15 +207,15 @@ $ cat deployment.log
 **Proof**: Metrics collection
 ```bash
 # Response time
-$ curl -w "Response time: %{time_total}s\n" http://44.203.38.191
+$ curl -w "Response time: %{time_total}s\n" http://bgd.nikhilmishra.live
 Response time: 0.045s
 
 # Resource utilization
 $ docker stats --no-stream
 CONTAINER ID   NAME      CPU %     MEM USAGE
-abc123...      blue-web   0.15%     14.7MiB
-def456...      green-web  0.12%     14.5MiB
-ghi789...      proxy      0.08%     12.3MiB
+********       blue-web   0.15%     14.7MiB
+********       green-web  0.12%     14.5MiB
+********       proxy      0.08%     12.3MiB
 ```
 
 ## Advanced Topics
@@ -267,7 +269,7 @@ Starting blue-web-2... done
 Starting blue-web-3... done
 
 # Verify load balancing
-$ curl -I http://44.203.38.191
+$ curl -I http://bgd.nikhilmishra.live
 HTTP/1.1 200 OK
 Server: nginx/1.24.0
 ```
@@ -278,13 +280,13 @@ Server: nginx/1.24.0
 **A**: Through various checks:
 ```bash
 # Check blue environment
-curl http://44.203.38.191:8081
+curl http://bgd.nikhilmishra.live:8081
 
 # Check green environment
-curl http://44.203.38.191:8082
+curl http://bgd.nikhilmishra.live:8082
 
 # Check active environment
-curl http://44.203.38.191
+curl http://bgd.nikhilmishra.live
 ```
 
 ### Q: How do we debug deployment issues?
@@ -332,7 +334,7 @@ Security considerations: Yes
 ```bash
 # Continuous requests during deployment show no failures
 $ for i in {1..100}; do 
-    curl -s http://44.203.38.191/ > /dev/null && 
+    curl -s http://bgd.nikhilmishra.live/ > /dev/null && 
     echo "Request $i: Success" || 
     echo "Request $i: Failed"
 done
@@ -383,8 +385,8 @@ $ docker exec proxy cat /etc/nginx/nginx.conf
 http {
     server {
         listen 443 ssl;
-        ssl_certificate /etc/nginx/certs/cert.pem;
-        ssl_certificate_key /etc/nginx/certs/key.pem;
+        ssl_certificate /etc/nginx/certs/********;
+        ssl_certificate_key /etc/nginx/certs/********;
     }
 }
 
@@ -394,7 +396,7 @@ http {
     server {
         location / {
             auth_basic "Restricted";
-            auth_basic_user_file /etc/nginx/.htpasswd;
+            auth_basic_user_file /etc/nginx/********;
         }
     }
 }
@@ -410,13 +412,13 @@ http {
 **Proof**: Sensitive data handling
 ```bash
 # Environment variables
-$ docker exec blue-web printenv
-DB_PASSWORD=secret
+$ docker exec blue-web printenv | grep DB
+DB_PASSWORD=********
 
 # Docker secrets
 $ docker secret ls
 ID                          NAME                CREATED             UPDATED
-abc123...                   db-password         2025-02-18 10:28:20 2025-02-18 10:28:20
+********                    db-password         2025-02-18         2025-02-18
 ```
 
 ## Future Improvements
@@ -457,6 +459,8 @@ Auto-scaling: Planned
 Geographic distribution: Planned
 ```
 
-Live Demo: http://44.203.38.191
-- Blue Environment: http://44.203.38.191:8081
-- Green Environment: http://44.203.38.191:8082
+Live Demo: http://bgd.nikhilmishra.live
+- Blue Environment: http://bgd.nikhilmishra.live:8081
+- Green Environment: http://bgd.nikhilmishra.live:8082
+
+Note: This demo is hosted on AWS EC2 and may not be always available as the instance may be stopped to save costs.
