@@ -1,348 +1,356 @@
-# Blue-Green Deployment Project
+# Blue-Green Deployment Implementation
 
-This project implements a blue-green deployment strategy for a production-ready Todo API application that is currently running on AWS EC2. The goal is to achieve zero-downtime deployments by running two identical production environments.
+Project Page: [roadmap.sh/projects/blue-green-deployment](https://roadmap.sh/projects/blue-green-deployment)
 
-## Current Infrastructure
+## Table of Contents
+1. [Project Overview](#project-overview)
+2. [Core Concepts](#core-concepts)
+3. [Implementation Details](#implementation-details)
+4. [Project Requirements & Implementation](#project-requirements--implementation)
+5. [Testing & Verification](#testing--verification)
+6. [Directory Structure](#directory-structure)
+7. [Running the Project](#running-the-project)
+8. [Deployment Process](#deployment-process)
+9. [Troubleshooting](#troubleshooting)
 
-### Production Environment
-- **Server**: 44.203.38.191 (Ubuntu) - Control Node
-- **Domain**: mca.nikhilmishra.live
-- **Application Stack**:
-  - Node.js Todo API (Express.js)
-  - MongoDB Database
-  - Nginx Reverse Proxy
-  - Docker and Docker Compose
-  - GitHub Actions CI/CD
+## Project Overview
 
-### Current Architecture
+This project implements a blue-green deployment strategy for a web application, enabling zero-downtime deployments with robust health checks and rollback capabilities. The implementation follows a first-principles approach, breaking down the complex deployment strategy into fundamental building blocks.
+
+### What is Blue-Green Deployment?
+Blue-green deployment is a release technique that reduces downtime and risk by running two identical production environments called Blue and Green. At any time, only one of the environments is live, serving all production traffic. The other environment remains idle.
+
+### System Architecture
+```mermaid
+graph TD
+    Client[Client] --> Proxy[Nginx Proxy Port 80]
+    Proxy --> |Active Route| Blue[Blue Environment<br/>Port 8081]
+    Proxy -.-> |Inactive Route| Green[Green Environment<br/>Port 8082]
+    
+    subgraph Blue Environment
+        Blue --> BlueApp[Static HTML/JS App]
+        Blue --> BlueHealth[/health Endpoint]
+    end
+    
+    subgraph Green Environment
+        Green --> GreenApp[Static HTML/JS App]
+        Green --> GreenHealth[/health Endpoint]
+    end
+    
+    DeployScript[Deploy Script] --> |1. Check Health| Blue
+    DeployScript --> |2. Deploy New Version| Green
+    DeployScript --> |3. Switch Traffic| Proxy
 ```
-                                              AWS EC2 Control Node (44.203.38.191)
-                                              ┌─────────────────────────────────┐
-Client -> mca.nikhilmishra.live -> Nginx -> │ Node.js API -> MongoDB          │
-                                              └─────────────────────────────────┘
+
+### Deployment Flow
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant P as Nginx Proxy
+    participant B as Blue Env
+    participant G as Green Env
+    participant D as Deploy Script
+
+    Note over C,G: Initial State: Blue is Active
+    
+    C->>P: Request
+    P->>B: Forward to Blue
+    B->>P: Response
+    P->>C: Return Response
+    
+    Note over D,G: Deployment Starts
+    D->>G: 1. Deploy New Version
+    D->>G: 2. Health Check
+    G-->>D: Health Status OK
+    
+    D->>P: 3. Update Config
+    D->>P: 4. Reload Nginx
+    
+    Note over C,G: After Deployment: Green is Active
+    
+    C->>P: Request
+    P->>G: Forward to Green
+    G->>P: Response
+    P->>C: Return Response
 ```
 
-### Target Blue-Green Architecture
+### Rollback Process
+```mermaid
+sequenceDiagram
+    participant P as Nginx Proxy
+    participant B as Blue Env
+    participant G as Green Env
+    participant D as Deploy Script
+
+    Note over P,G: Deployment to Green Failed
+    
+    D->>G: 1. Deploy New Version
+    G-->>D: Health Check Failed
+    
+    D->>G: 2. Stop Deployment
+    D->>P: 3. Keep Blue Active
+    
+    Note over P,B: System Remains on Blue
+    
+    P->>B: Traffic Continues to Blue
+    B->>P: Response from Blue
 ```
-                                              AWS EC2 Control Node (44.203.38.191)
-                                              ┌─────────────────────────────────┐
-                                              │ Blue Environment                │
-                                              │   ├─ Node.js API (Port 3000)   │
-Client -> mca.nikhilmishra.live -> Nginx -> │   └─ MongoDB (Port 27017)      │
-                                              │                                 │
-                                              │ Green Environment              │
-                                              │   ├─ Node.js API (Port 3001)   │
-                                              │   └─ MongoDB (Port 27018)      │
-                                              └─────────────────────────────────┘
+
+## Core Concepts
+
+### 1. Container Isolation
+- Each environment (Blue/Green) runs in isolated containers
+- Containers ensure consistent environments
+- Docker provides the containerization layer
+
+### 2. Load Balancing
+- Nginx proxy routes traffic to active environment
+- Dynamic configuration updates enable seamless switching
+- Health checks ensure service availability
+
+### 3. Zero-Downtime Deployment
+- New version deployed to inactive environment
+- Traffic switched only after health verification
+- Instant rollback capability if issues arise
+
+## Implementation Details
+
+### 1. Environment Setup
+Each environment consists of:
+```yaml
+version: '3.8'
+services:
+  web:
+    image: nginx:alpine
+    ports:
+      - "8081:80"  # Blue
+      - "8082:80"  # Green
+    volumes:
+      - ./html:/usr/share/nginx/html
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 ```
 
-## Implementation Plan
+### 2. Proxy Configuration
+```nginx
+http {
+    upstream backend {
+        server localhost:8081;  # Default to blue
+    }
 
-### Phase 1: Infrastructure Preparation
-1. Back up current production environment:
+    server {
+        listen 80;
+        location / {
+            proxy_pass http://backend;
+        }
+    }
+}
+```
+
+### 3. Health Check Implementation
+```bash
+verify_health() {
+    local port=$1
+    local retries=30
+    for i in $(seq 1 $retries); do
+        if curl -s http://localhost:$port/health | grep -q "healthy"; then
+            return 0
+        fi
+        sleep 2
+    done
+    return 1
+}
+```
+
+## Project Requirements & Implementation
+
+### 1. Basic Requirements 
+- **Separate Containers**: Implemented using Docker Compose
+  ```yaml
+  # blue/docker-compose.yml & green/docker-compose.yml
+  services:
+    web:
+      image: nginx:alpine
+      container_name: ${COLOR}-web
+  ```
+  
+- **Traffic Switching**: Implemented via Nginx proxy
+  - Live Demo: http://44.203.38.191
+  - Blue Environment: http://44.203.38.191:8081
+  - Green Environment: http://44.203.38.191:8082
+
+- **Health Checks**: Implemented at multiple levels
+  ```json
+  # Health Check Response
+  {"status":"healthy"}
+  ```
+
+### 2. Zero-Downtime Deployment 
+- Deployment Process:
+  1. Deploy new version to inactive environment
+  2. Verify health checks
+  3. Switch traffic at proxy level
+  4. Keep old version running for potential rollback
+
+### 3. Logging and Monitoring 
+- Deployment logs:
+  ```bash
+  [2025-02-18 10:28:20] Starting deployment to green environment
+  [2025-02-18 10:28:25] Health check passed
+  [2025-02-18 10:28:26] Successfully switched traffic
+  ```
+
+## Testing & Verification
+
+### 1. Health Check Testing
+```bash
+# Test blue environment
+curl http://localhost:8081/health
+# Expected: {"status":"healthy"}
+
+# Test green environment
+curl http://localhost:8082/health
+# Expected: {"status":"healthy"}
+```
+
+### 2. Deployment Verification
+```bash
+# Before deployment
+curl http://localhost  # Shows Blue version
+
+# After deployment
+curl http://localhost  # Shows Green version
+```
+
+### 3. Rollback Testing
+```bash
+# Simulate failure
+docker stop green-web
+
+# Automatic rollback
+# Proxy remains on blue environment
+curl http://localhost  # Still shows Blue version
+```
+
+## Directory Structure
+```
+.
+├── blue/                  # Blue environment
+│   ├── docker-compose.yml
+│   └── html/
+│       └── index.html
+├── green/                 # Green environment
+│   ├── docker-compose.yml
+│   └── html/
+│       └── index.html
+├── proxy/                 # Main proxy
+│   ├── docker-compose.yml
+│   └── nginx.conf
+├── nginx/                 # Shared config
+│   └── default.conf
+└── deploy.sh             # Deployment script
+```
+
+## Running the Project
+
+### 1. Initial Setup
+```bash
+# Start blue environment
+cd blue && docker-compose up -d
+
+# Start proxy
+cd ../proxy && docker-compose up -d
+```
+
+### 2. Deployment
+```bash
+# Deploy new version
+./deploy.sh
+```
+
+### 3. Verification
+```bash
+# Check active environment
+curl http://localhost
+
+# Check both environments
+curl http://localhost:8081
+curl http://localhost:8082
+```
+
+## Deployment Process
+
+### 1. Pre-deployment Checks
+- Verify current active environment
+- Check system resources
+- Validate new version
+
+### 2. Deployment Steps
+```bash
+# 1. Identify target environment
+CURRENT_ENV=$(cat .active_env)
+TARGET_ENV=$([ "$CURRENT_ENV" = "blue" ] && echo "green" || echo "blue")
+
+# 2. Deploy to target
+cd $TARGET_ENV && docker-compose up -d
+
+# 3. Verify health
+verify_health $TARGET_PORT
+
+# 4. Switch traffic
+sed -i "s/$CURRENT_PORT/$TARGET_PORT/" ../proxy/nginx.conf
+docker exec proxy nginx -s reload
+```
+
+### 3. Post-deployment
+- Monitor error rates
+- Verify application metrics
+- Keep old version ready for rollback
+
+## Troubleshooting
+
+### Common Issues
+1. **Health Check Failures**
    ```bash
-   # On Control Node (44.203.38.191)
-   # Backup MongoDB
-   docker exec mongodb mongodump --out /data/backup/$(date +%Y%m%d)
-   
-   # Backup current configurations
-   sudo cp /etc/nginx/conf.d/app.conf /etc/nginx/conf.d/app.conf.backup
-   cp docker-compose.yml docker-compose.yml.backup
+   # Check logs
+   docker logs ${COLOR}-web
    ```
 
-2. Create directory structure:
+2. **Proxy Issues**
    ```bash
-   # On Control Node
-   sudo mkdir -p /opt/{blue,green}/app
-   sudo mkdir -p /opt/scripts
+   # Verify nginx config
+   docker exec proxy nginx -t
    ```
 
-### Phase 2: Blue Environment Setup (Current Production)
-1. Move current application to blue environment:
+3. **Port Conflicts**
    ```bash
-   # On Control Node
-   sudo mv /opt/app/* /opt/blue/app/
-   sudo ln -s /opt/blue /opt/current
+   # Check port usage
+   netstat -tulpn | grep '808[1-2]'
    ```
 
-2. Update blue environment Docker Compose:
-   ```yaml
-   # /opt/blue/docker-compose.yml
-   version: '3.8'
-   services:
-     api:
-       container_name: blue-api
-       build: ./app
-       ports:
-         - "3000:3000"
-       environment:
-         - MONGODB_URI=mongodb://blue-mongodb:27017/todos
-       depends_on:
-         - mongodb
-     
-     mongodb:
-       container_name: blue-mongodb
-       image: mongo:latest
-       ports:
-         - "27017:27017"
-       volumes:
-         - blue-mongodb-data:/data/db
-
-   volumes:
-     blue-mongodb-data:
-   ```
-
-### Phase 3: Green Environment Setup
-1. Create green environment:
+### Recovery Steps
+1. **Quick Rollback**
    ```bash
-   # On Control Node
-   sudo cp -r /opt/blue/app/* /opt/green/app/
+   # Switch back to previous environment
+   sed -i "s/$TARGET_PORT/$CURRENT_PORT/" proxy/nginx.conf
+   docker exec proxy nginx -s reload
    ```
 
-2. Create green environment Docker Compose:
-   ```yaml
-   # /opt/green/docker-compose.yml
-   version: '3.8'
-   services:
-     api:
-       container_name: green-api
-       build: ./app
-       ports:
-         - "3001:3000"
-       environment:
-         - MONGODB_URI=mongodb://green-mongodb:27017/todos
-       depends_on:
-         - mongodb
-     
-     mongodb:
-       container_name: green-mongodb
-       image: mongo:latest
-       ports:
-         - "27018:27017"
-       volumes:
-         - green-mongodb-data:/data/db
-
-   volumes:
-     green-mongodb-data:
-   ```
-
-### Phase 4: Load Balancer Configuration
-1. Update Nginx configuration:
-   ```nginx
-   # /etc/nginx/conf.d/app.conf
-   upstream blue {
-       server localhost:3000;
-   }
-
-   upstream green {
-       server localhost:3001;
-   }
-
-   # Production traffic points to active environment
-   upstream production {
-       server localhost:3000;  # Initially points to blue
-   }
-
-   server {
-       listen 80;
-       server_name mca.nikhilmishra.live;
-
-       location / {
-           proxy_pass http://production;
-           proxy_http_version 1.1;
-           proxy_set_header Upgrade $http_upgrade;
-           proxy_set_header Connection 'upgrade';
-           proxy_set_header Host $host;
-           proxy_cache_bypass $http_upgrade;
-       }
-
-       # Health check endpoint
-       location /health {
-           proxy_pass http://production/health;
-       }
-   }
-   ```
-
-### Phase 5: Deployment Scripts
-1. Create deployment scripts:
+2. **Environment Reset**
    ```bash
-   # /opt/scripts/deploy.sh
-   #!/bin/bash
-   
-   # Determine target environment
-   CURRENT=$(readlink /opt/current)
-   if [ "$CURRENT" = "blue" ]; then
-     TARGET_ENV="green"
-     TARGET_PORT="3001"
-   else
-     TARGET_ENV="blue"
-     TARGET_PORT="3000"
-   fi
-   
-   echo "Deploying to $TARGET_ENV environment..."
-   
-   # Deploy to target environment
-   cd /opt/$TARGET_ENV
-   docker-compose pull
+   # Clean restart
+   docker-compose down
    docker-compose up -d
-   
-   # Wait for health check
-   for i in {1..30}; do
-     if curl -s http://localhost:$TARGET_PORT/health | grep -q "ok"; then
-       echo "Health check passed"
-       # Switch traffic
-       sudo /opt/scripts/switch-traffic.sh $TARGET_ENV
-       exit 0
-     fi
-     sleep 2
-   done
-   
-   echo "Health check failed"
-   /opt/scripts/rollback.sh
-   exit 1
    ```
 
-   ```bash
-   # /opt/scripts/switch-traffic.sh
-   #!/bin/bash
-   TARGET_ENV=$1
-   TARGET_PORT=$([ "$TARGET_ENV" = "blue" ] && echo "3000" || echo "3001")
-   
-   # Update Nginx upstream
-   sed -i "s/server localhost:[0-9]\+/server localhost:$TARGET_PORT/" /etc/nginx/conf.d/app.conf
-   nginx -s reload
-   
-   # Update current symlink
-   ln -sf /opt/$TARGET_ENV /opt/current
-   ```
+This implementation provides a robust, production-ready blue-green deployment solution with:
+- Zero-downtime deployments
+- Automated health checks
+- Instant rollback capability
+- Comprehensive logging
+- Clear deployment process
 
-   ```bash
-   # /opt/scripts/rollback.sh
-   #!/bin/bash
-   CURRENT=$(readlink /opt/current)
-   
-   if [ "$CURRENT" = "blue" ]; then
-     /opt/scripts/switch-traffic.sh green
-   else
-     /opt/scripts/switch-traffic.sh blue
-   fi
-   ```
-
-2. Make scripts executable:
-   ```bash
-   chmod +x /opt/scripts/*.sh
-   ```
-
-### Phase 6: Database Management
-1. Create database sync script:
-   ```bash
-   # /opt/scripts/sync-db.sh
-   #!/bin/bash
-   
-   CURRENT=$(readlink /opt/current)
-   if [ "$CURRENT" = "blue" ]; then
-     SRC_CONTAINER="blue-mongodb"
-     DST_CONTAINER="green-mongodb"
-   else
-     SRC_CONTAINER="green-mongodb"
-     DST_CONTAINER="blue-mongodb"
-   fi
-   
-   # Dump from source
-   docker exec $SRC_CONTAINER mongodump --out /tmp/db_backup
-   
-   # Restore to destination
-   docker cp $SRC_CONTAINER:/tmp/db_backup /tmp/
-   docker cp /tmp/db_backup $DST_CONTAINER:/tmp/
-   docker exec $DST_CONTAINER mongorestore --drop /tmp/db_backup
-   ```
-
-### Phase 7: GitHub Actions Workflow
-1. Update workflow file:
-   ```yaml
-   # .github/workflows/deploy.yml
-   name: Deploy
-
-   on:
-     push:
-       branches: [ main ]
-
-   jobs:
-     deploy:
-       runs-on: ubuntu-latest
-       steps:
-         - uses: actions/checkout@v2
-         
-         - name: Deploy to EC2
-           uses: appleboy/ssh-action@master
-           with:
-             host: 44.203.38.191
-             username: ubuntu
-             key: ${{ secrets.SSH_PRIVATE_KEY }}
-             script: |
-               cd /opt/scripts
-               ./deploy.sh
-
-         - name: Notify on failure
-           if: failure()
-           run: |
-             echo "Deployment failed, check logs"
-   ```
-
-## Project Structure on Control Node
-
-```
-/opt/
-├── current -> blue/          # Symlink to current environment
-├── blue/                     # Blue environment
-│   ├── app/
-│   │   ├── src/
-│   │   └── package.json
-│   └── docker-compose.yml
-├── green/                    # Green environment
-│   ├── app/
-│   │   ├── src/
-│   │   └── package.json
-│   └── docker-compose.yml
-├── scripts/
-│   ├── deploy.sh
-│   ├── switch-traffic.sh
-│   ├── rollback.sh
-│   └── sync-db.sh
-└── backup/                   # Database backups
-```
-
-## Getting Started
-
-1. SSH into the control node:
-   ```bash
-   ssh ubuntu@44.203.38.191
-   ```
-
-2. Set up initial structure:
-   ```bash
-   # Create directories
-   sudo mkdir -p /opt/{blue,green}/app /opt/scripts /opt/backup
-   
-   # Move current app to blue environment
-   sudo mv /opt/app/* /opt/blue/app/
-   sudo ln -s /opt/blue /opt/current
-   
-   # Copy deployment scripts
-   sudo cp -r scripts/* /opt/scripts/
-   sudo chmod +x /opt/scripts/*.sh
-   ```
-
-3. Test deployment:
-   ```bash
-   cd /opt/scripts
-   ./deploy.sh
-   ```
-
-## Contributing
-
-This project is part of the learning journey from [roadmap.sh](https://roadmap.sh/projects/blue-green-deployment).
-
-## License
-
-MIT License
+Live demo available at: http://44.203.38.191
