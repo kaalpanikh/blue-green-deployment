@@ -23,24 +23,27 @@ Blue-green deployment is a release technique that reduces downtime and risk by r
 
 ### System Architecture
 ```mermaid
-graph TB
-    Client((Client)) --> Proxy[Nginx Proxy<br>Port 80]
-    Proxy --> |Active Route| Blue[Blue Environment<br>Port 8081]
-    Proxy -.-> |Inactive Route| Green[Green Environment<br>Port 8082]
+flowchart LR
+    Client-->Proxy
+    Proxy-->Blue
+    Proxy-.->Green
+    Deploy-->Proxy
+    Deploy-->Blue
+    Deploy-->Green
     
     subgraph BlueEnv[Blue Environment]
-        Blue --> BlueApp[Static HTML/JS App]
-        Blue --> BlueHealth[/health Endpoint]
+    Blue[Blue:8081]-->BlueApp[App]
+    Blue-->BlueHealth[Health]
     end
     
     subgraph GreenEnv[Green Environment]
-        Green --> GreenApp[Static HTML/JS App]
-        Green --> GreenHealth[/health Endpoint]
+    Green[Green:8082]-->GreenApp[App]
+    Green-->GreenHealth[Health]
     end
     
-    Deploy[Deploy Script] --> |1. Check Health| Blue
-    Deploy --> |2. Deploy New Version| Green
-    Deploy --> |3. Switch Traffic| Proxy
+    style Blue fill:#e6f3ff
+    style Green fill:#f0fff0
+    style Proxy fill:#f9f9f9
 ```
 
 ### Deployment Flow
